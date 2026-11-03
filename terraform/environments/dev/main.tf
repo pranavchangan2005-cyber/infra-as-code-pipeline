@@ -1,7 +1,7 @@
 terraform {
   required_version = ">= 1.5.0"
 
-   backend "s3" {
+  backend "s3" {
     bucket         = "infra-as-code-pipeline-tfstate-565122145389-ap-south-1"
     key            = "dev/terraform.tfstate"
     region         = "ap-south-1"
@@ -34,4 +34,19 @@ output "vpc_id" {
 output "public_subnet_ids" {
   description = "IDs of the development public subnets"
   value       = module.networking.public_subnet_ids
+}
+module "security" {
+  source = "../../modules/security"
+
+  project_name = "infra-as-code-pipeline"
+  vpc_id       = module.networking.vpc_id
+}
+output "alb_security_group_id" {
+  description = "Security group ID for the application load balancer"
+  value       = module.security.alb_security_group_id
+}
+
+output "ecs_security_group_id" {
+  description = "Security group ID for the ECS tasks"
+  value       = module.security.ecs_security_group_id
 }

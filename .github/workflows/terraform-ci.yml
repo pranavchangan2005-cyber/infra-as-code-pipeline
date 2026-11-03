@@ -1,16 +1,23 @@
-name: Terraform CI
+name: Terraform CI and ECS Deployment
 
 on:
   pull_request:
     paths:
       - "terraform/**"
+      - "app/**"
       - ".github/workflows/**"
+      - ".tflint.hcl"
   push:
     branches:
       - main
     paths:
       - "terraform/**"
+      - "app/**"
       - ".github/workflows/**"
+      - ".tflint.hcl"
+
+permissions:
+  contents: read
 
 jobs:
   terraform-validate:
@@ -35,3 +42,64 @@ jobs:
 
       - name: Run TFLint
         run: tflint --chdir=terraform/environments/dev
+
+  deploy:
+    name: Build, Push, and Deploy to ECS
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: terraform-validate
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: infra-as-code-pipeline-app
+      ECS_CLUSTER: infra-as-code-pipeline-cluster
+      ECS_SERVICE: infra-as-code-pipeline-service
+      TASK_FAMILY: infra-as-code-pipeline-task
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sign in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" ./app
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "IMAGE_URI=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
+
+      - name: Update task definition image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: app
+          image: ${{ env.IMAGE_URI }}
+
+      - name: Deploy updated task definition to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

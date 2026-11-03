@@ -50,3 +50,19 @@ output "ecs_security_group_id" {
   description = "Security group ID for the ECS tasks"
   value       = module.security.ecs_security_group_id
 }
+module "compute" {
+  source = "../../modules/compute"
+
+  project_name          = "infra-as-code-pipeline"
+  subnet_ids            = module.networking.public_subnet_ids
+  vpc_id                = module.networking.vpc_id
+  alb_security_group_id = module.security.alb_security_group_id
+  ecs_security_group_id = module.security.ecs_security_group_id
+
+  container_port = 3000
+  desired_count  = 2
+}
+output "alb_dns_name" {
+  description = "Public DNS name of the application load balancer"
+  value       = module.compute.alb_dns_name
+}

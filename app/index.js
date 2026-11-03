@@ -5,7 +5,7 @@ const port = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
   res.json({
-    message: "DevOps Zero-Touch Deployment Pipeline",
+    message: "Zero-Touch Deployment Successful - Version 2",
     status: "running",
     environment: process.env.ENVIRONMENT || "dev"
   });
